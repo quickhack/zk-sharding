@@ -19,7 +19,7 @@ public class ShardingUtils {
 
         ShardingRule shardingRule = shardingInfo.getShardingRule();
         if (null == shardingRule) {
-            return false; // 没有抢到RangeNode，则不Sharding（Standby状态）
+            return false; // 没有抢到RuleNode，则不Sharding（Standby状态）
         }
 
         return shardingRule.inRange(shardingInput);

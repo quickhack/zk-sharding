@@ -40,12 +40,12 @@ class ShardingWatcher {
 
     public volatile ShardingInfo shardingInfo;
 
-    private volatile String grabNodeDir;
+    private volatile String grabsNodeDir;
 
     private volatile boolean closed = false;
 
     public void init() throws Exception {
-        grabNodeDir = shardingBaseDir + "/" + key + "/" + GRAB_NODE_NAME;
+        grabsNodeDir = shardingBaseDir + "/" + key + "/" + GRAB_NODE_NAME;
 
         stateMachineExecutor.execute(new Runnable() {
             @Override
@@ -107,15 +107,15 @@ class ShardingWatcher {
     // =====================================
 
     void checking() {
-        assert grabbedNodeName == null;
+        assert grabbedRuleNodeName == null;
 
         status.set(Status.Checking);
         while (!closed) {
             try {
-                logger.info("checking " + grabNodeDir);
-                Stat stat = client.checkExists().forPath(grabNodeDir);
+                logger.info("checking " + grabsNodeDir);
+                Stat stat = client.checkExists().forPath(grabsNodeDir);
                 if (stat == null) {
-                    logger.error("not exists sharding node " + grabNodeDir);
+                    logger.error("not exists grabs node " + grabsNodeDir + "on zookeeper!");
                     notifyListeners(null);
                     try {
                         Thread.sleep(1000);
@@ -142,7 +142,7 @@ class ShardingWatcher {
                     break;
                 }
             } catch (Throwable t) {
-                logger.error("Fail to check exists to sharding node " + grabNodeDir +
+                logger.error("Fail to check exists to sharding node " + grabsNodeDir +
                         ", cause: " + t.getMessage(), t);
             }
         }
@@ -152,35 +152,35 @@ class ShardingWatcher {
     // 2. Grabbing
     // =====================================
 
-    String grabbedNodeName = null;
+    String grabbedRuleNodeName = null;
 
     void grabbing() throws Exception {
-        logger.info("grabbing " + grabNodeDir);
+        logger.info("grabbing " + grabsNodeDir);
 
-        assert grabbedNodeName == null;
+        assert grabbedRuleNodeName == null;
 
-        List<String> rangeNodes = client.getChildren().usingWatcher(rangeNodeChildrenWatcher).forPath(grabNodeDir);
-        if (rangeNodes.isEmpty()) {
-            logger.error("no range node under zk node(" + grabNodeDir + ")");
+        List<String> ruleNodes = client.getChildren().usingWatcher(grabsNodeWatcher).forPath(grabsNodeDir);
+        if (ruleNodes.isEmpty()) {
+            logger.error("no rule nodes under grabs node(" + grabsNodeDir + ")");
         } else {
-            Collections.shuffle(rangeNodes); // 乱序抢占，可以更多完成
+            Collections.shuffle(ruleNodes); // 乱序抢占，可以更多完成
         }
 
         grabbingFinished = new AtomicBoolean(false);
-        rangeNode2GrabbingTask = new HashMap<String, GrabbingTask>();
-        for (int i = 0; i < rangeNodes.size(); i++) {
-            String node = rangeNodes.get(i);
+        ruleNode2GrabbingTask = new HashMap<String, GrabbingTask>();
+        for (int i = 0; i < ruleNodes.size(); i++) {
+            String ruleNode = ruleNodes.get(i);
 
-            GrabbingTask task = new GrabbingTask(5 * i, node, grabbingFinished);
+            GrabbingTask task = new GrabbingTask(5 * i, ruleNode, grabbingFinished);
             grabbingExecutor.execute(task);
-            rangeNode2GrabbingTask.put(node, task);
+            ruleNode2GrabbingTask.put(ruleNode, task);
         }
     }
 
-    CuratorWatcher rangeNodeChildrenWatcher = new CuratorWatcher() {
+    CuratorWatcher grabsNodeWatcher = new CuratorWatcher() {
         @Override
         public void process(WatchedEvent event) throws Exception {
-            logger.info("Receive range node children event: " + event);
+            logger.info("Receive grabs node event: " + event);
 
             switch (event.getType()) {
                 case None:
@@ -189,39 +189,40 @@ class ShardingWatcher {
                     // ignore
                     break;
                 case NodeDeleted:
-                    logger.error("Sharding node deleted, resetToChecking!");
+                    logger.error("Grabs node deleted, resetToChecking!");
                     resetToChecking(false);
-                    break;
+                    return;
                 case NodeChildrenChanged:
                     if (status.compareAndSet(Status.Grabbing, Status.Checking)) {
-                        logger.warn("NodeChildrenChanged when Grabbing, resetToChecking!");
+                        logger.warn("NodeChildrenChanged of grabs node when Grabbing, resetToChecking!");
                         resetToChecking(false);
+                        return;
                     }
             }
 
             // 需要自己再次订阅！
             if (status.get() == Status.Grabbing) {
-                client.getChildren().usingWatcher(this).forPath(grabNodeDir);
+                client.getChildren().usingWatcher(this).forPath(grabsNodeDir);
             }
         }
     };
-    Map<String, GrabbingTask> rangeNode2GrabbingTask;
+    Map<String, GrabbingTask> ruleNode2GrabbingTask;
     volatile AtomicBoolean grabbingFinished;
 
     private final ExecutorService grabbingExecutor = Executors.newCachedThreadPool();
 
     /**
-     * 抢RangeNode并等待，直到 成功 或 没有必要了（其它的GrabbingTask已经抢到了）！
+     * 抢Rule Node并等待，直到 成功 或 没有必要了（其它的GrabbingTask已经抢到了）！
      */
     class GrabbingTask implements Runnable {
         final int sleep;
-        final String rangeNodeName;
+        final String ruleNode;
         final AtomicBoolean finished;
         final CountDownLatch latch = new CountDownLatch(1);
 
-        GrabbingTask(int sleep, String rangeNodeName, AtomicBoolean finished) {
+        GrabbingTask(int sleep, String ruleNode, AtomicBoolean finished) {
             this.sleep = sleep;
-            this.rangeNodeName = rangeNodeName;
+            this.ruleNode = ruleNode;
             this.finished = finished;
         }
 
@@ -235,9 +236,9 @@ class ShardingWatcher {
                 }
             }
 
-            logger.info("grabbing in task, " + grabNodeDir + "/" + rangeNodeName);
+            logger.info("grabbing in task, " + grabsNodeDir + "/" + ruleNode);
             while (!finished.get() && !closed) {
-                InterProcessMutex lock = new InterProcessMutex(client, grabNodeDir + "/" + rangeNodeName);
+                InterProcessMutex lock = new InterProcessMutex(client, grabsNodeDir + "/" + ruleNode);
                 boolean acquire = false;
                 try {
                     acquire = lock.acquire(1, TimeUnit.SECONDS); // TODO 确定一个合适的等待时长！
@@ -249,7 +250,7 @@ class ShardingWatcher {
                     try {
                         if (finished.compareAndSet(false, true) &&
                                 status.compareAndSet(Status.Grabbing, Status.Grabbed)) {
-                            grabbedNodeName = rangeNodeName;
+                            grabbedRuleNodeName = ruleNode;
                             logger.info("grabbing is done!");
 
                             stateMachineExecutor.execute(new Runnable() {
@@ -287,13 +288,13 @@ class ShardingWatcher {
      * 这个方法是没有Block的
      */
     void grabbed() {
-        logger.info("grabbed! grabbedNodeName: " + grabNodeDir + "/" + grabbedNodeName);
+        logger.info("grabbed! grabbedNodeName: " + grabsNodeDir + "/" + grabbedRuleNodeName);
         try {
-            String path = grabNodeDir + "/" + grabbedNodeName;
+            String path = grabsNodeDir + "/" + grabbedRuleNodeName;
             byte[] data = client.getData().usingWatcher(grabbedNodeValueWatcher).forPath(path);
             notifyListeners(data2ShardingInfo(path, data));
         } catch (Exception e) {
-            logger.error("Fail to get data RangeNode when do grabbed, resetToChecking, cause: " +
+            logger.error("Fail to get data of rule node when do grabbed, resetToChecking, cause: " +
                     e.getMessage(), e);
             resetToChecking(false);
         }
@@ -318,7 +319,7 @@ class ShardingWatcher {
                     notifyListeners(data2ShardingInfo(path, data));
                     break;
                 case NodeDeleted: // 被删除了？退出Grabbed状态！
-                    logger.error("range node is deleted after grabbed, resetToChecking!");
+                    logger.error("grabbed rule node is deleted after grabbed, resetToChecking!");
                     resetToChecking(false);
                     return;
             }
@@ -340,14 +341,14 @@ class ShardingWatcher {
                     if (rule.trim().length() >= 0) {
                         return new ShardingInfo(ShardingRuleFactory.toShardingRule(rule), rule);
                     } else {
-                        logger.error("blank data in sharding range node " + path);
+                        logger.error("blank data in rule node " + path);
                     }
                 } catch (Exception e) {
-                    logger.error("Fail to create sharding rule from sharding range node " + path +
+                    logger.error("Fail to create sharding rule from rule node " + path +
                             ", cause: " + e.getMessage(), e);
                 }
             } else {
-                logger.error("NO data in sharding range node " + path);
+                logger.error("NO data in rule node " + path);
             }
         }
 
@@ -383,22 +384,21 @@ class ShardingWatcher {
     synchronized void resetToChecking(boolean isZooKeeperError) {
         status.set(Status.Checking);
 
-        String name = grabbedNodeName;
-        grabbedNodeName = null;
+        String name = grabbedRuleNodeName;
+        grabbedRuleNodeName = null;
 
         // release in GrabbingTask! 
-        if (rangeNode2GrabbingTask != null) {
-            GrabbingTask grabbingTask = rangeNode2GrabbingTask.get(name);
+        if (ruleNode2GrabbingTask != null) {
+            GrabbingTask grabbingTask = ruleNode2GrabbingTask.get(name);
             if (grabbingTask != null)
                 grabbingTask.latch.countDown();
-            rangeNode2GrabbingTask = null;
+            ruleNode2GrabbingTask = null;
         }
 
         // FIXME 要有事件通知！ 下面的通知是否合适？
-        if(isZooKeeperError) {
+        if (isZooKeeperError) {
             notifyListeners(null);
-        }
-        else {
+        } else {
             notifyListeners(new ShardingInfo(null, null));
         }
 
