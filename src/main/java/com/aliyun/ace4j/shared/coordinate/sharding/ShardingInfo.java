@@ -4,7 +4,7 @@ import java.util.Date;
 
 /**
  * Sharding信息，值对象（不修改，线程安全）。
- * 
+ *
  * @author ding.lid
  * @see ShardingRule
  */
@@ -46,5 +46,10 @@ public class ShardingInfo {
         this.shardingRule = shardingRule;
         this.rule = rule;
         this.disabled = false;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("Sharding Info(create time:%s, rule:%s, %s)", createTime, rule, disabled);
     }
 }
