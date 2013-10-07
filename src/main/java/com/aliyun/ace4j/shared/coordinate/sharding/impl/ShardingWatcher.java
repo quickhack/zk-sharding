@@ -291,7 +291,7 @@ class ShardingWatcher {
         logger.info("grabbed! grabbedNodeName: " + grabsNodeDir + "/" + grabbedRuleNodeName);
         try {
             String path = grabsNodeDir + "/" + grabbedRuleNodeName;
-            byte[] data = client.getData().usingWatcher(grabbedNodeValueWatcher).forPath(path);
+            byte[] data = client.getData().usingWatcher(grabbedRuleNodeWatcher).forPath(path);
             notifyListeners(data2ShardingInfo(path, data));
         } catch (Exception e) {
             logger.error("Fail to get data of rule node when do grabbed, resetToChecking, cause: " +
@@ -300,10 +300,10 @@ class ShardingWatcher {
         }
     }
 
-    CuratorWatcher grabbedNodeValueWatcher = new CuratorWatcher() {
+    CuratorWatcher grabbedRuleNodeWatcher = new CuratorWatcher() {
         @Override
         public void process(WatchedEvent event) throws Exception {
-            logger.info("grabbedNodeValueWatcher receive event: " + event);
+            logger.info("grabbedRuleNode receive event: " + event);
 
             final String path = event.getPath();
             switch (event.getType()) {
