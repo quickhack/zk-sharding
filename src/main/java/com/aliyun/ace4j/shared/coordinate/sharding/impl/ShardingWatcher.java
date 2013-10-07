@@ -308,10 +308,13 @@ class ShardingWatcher {
             final String path = event.getPath();
             switch (event.getType()) {
                 case None:
-                    if (event.getState() == Watcher.Event.KeeperState.Disconnected) {
-                        logger.error("disconnected from zk after grabbed, resetToChecking!");
-                        resetToChecking(true);
-                        return;
+                    switch (event.getState()){
+                        case Disconnected:
+                            logger.error("disconnected from zk after grabbed, resetToChecking!");
+                            resetToChecking(true);
+                            return;
+                        case SyncConnected:
+                            return;
                     }
                     break;
                 case NodeDataChanged:
