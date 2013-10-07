@@ -17,7 +17,7 @@ import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.CuratorFrameworkFactory;
 import com.netflix.curator.framework.state.ConnectionState;
 import com.netflix.curator.framework.state.ConnectionStateListener;
-import com.netflix.curator.retry.ExponentialBackoffRetry;
+import com.netflix.curator.retry.RetryUntilElapsed;
 
 /**
  * @author ding.lid
@@ -106,7 +106,7 @@ public class ShardingServiceImpl implements ShardingService {
 
         // 一直重试；最长sleep时间是2分钟。
         // FIXME 重试是指什么的重试？Zk所有操作的重试？只是Zk连接的重试？ 这会影响如何配置
-        client = CuratorFrameworkFactory.newClient(zkAddress, new ExponentialBackoffRetry(1000, Integer.MAX_VALUE, 2 * 60 * 1000));
+        client = CuratorFrameworkFactory.newClient(zkAddress, new RetryUntilElapsed(1000 * 3, 1000));
         client.getConnectionStateListenable().addListener(connectionStateListener);
         client.start();
 
@@ -187,7 +187,7 @@ public class ShardingServiceImpl implements ShardingService {
     public ShardingInfo getShardingInfo() {
         return getShardingInfo(getDefaultKey());
     }
-    
+
     public ShardingInfo getShardingInfo(String key) {
         return getWatcherOfKey(key).shardingInfo;
     }
