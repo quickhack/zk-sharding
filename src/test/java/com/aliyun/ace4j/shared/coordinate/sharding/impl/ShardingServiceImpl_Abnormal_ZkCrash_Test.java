@@ -1,5 +1,6 @@
 package com.aliyun.ace4j.shared.coordinate.sharding.impl;
 
+import java.io.File;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -31,7 +32,7 @@ public class ShardingServiceImpl_Abnormal_ZkCrash_Test extends BaseShardingServi
     private static final Logger logger = LoggerFactory.getLogger(ShardingServiceImpl_Abnormal_ZkCrash_Test.class);
 
     static volatile Integer port = null;
-
+    static volatile File tempDirectory;
 
     static void startZk() throws Exception {
         List<String[]> nodes = asList(
@@ -42,15 +43,16 @@ public class ShardingServiceImpl_Abnormal_ZkCrash_Test extends BaseShardingServi
         );
 
         if (testingServer != null) {
-            testingServer.close();
+            testingServer.stop();
             testingServer = null;
         }
 
         if (port == null) {
-            testingServer = CreatorHelper.createZkServerWithNodes(nodes);
+            testingServer = createZkServerWithNodes(nodes);
             port = testingServer.getPort();
+            tempDirectory = testingServer.getTempDirectory();
         } else {
-            testingServer = createZkServerWithNodes(port, nodes);
+            testingServer = createZkServerWithNodes(port, tempDirectory, null);
         }
     }
 
@@ -81,10 +83,11 @@ public class ShardingServiceImpl_Abnormal_ZkCrash_Test extends BaseShardingServi
         assertEquals(1, counter.get());
         assertNotNull(holder.get());
 
-        testingServer.close();
+        testingServer.stop();
+        testingServer = null;
         logger.info("=== stop zk server! ===");
 
-        for (int i = 0; i < 8; ++i) {
+        for (int i = 0; i < 12; ++i) {
             sleep(1000);
             logger.info("=== Wait Notify: " + i);
             if (counter.get() >= 2) {
@@ -110,6 +113,7 @@ public class ShardingServiceImpl_Abnormal_ZkCrash_Test extends BaseShardingServi
         }
 
         info = holder.get();
+        assertEquals(4, counter.get());
         assertNotNull(info);
         assertTrue(System.currentTimeMillis() - info.getCreateTime().getTime() < 1000 * 4);
         assertEquals("true", info.getRule());

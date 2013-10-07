@@ -1,5 +1,6 @@
 package com.aliyun.ace4j.shared.coordinate.sharding.impl;
 
+import java.io.File;
 import java.nio.charset.Charset;
 import java.util.List;
 
@@ -8,6 +9,7 @@ import org.apache.zookeeper.CreateMode;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.CuratorFrameworkFactory;
 import com.netflix.curator.retry.ExponentialBackoffRetry;
+import com.netflix.curator.retry.RetryUntilElapsed;
 import com.netflix.curator.test.TestingServer;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -35,13 +37,17 @@ public class CreatorHelper {
     }
 
     public static TestingServer createZkServerWithNodes(int zkPort, List<String[]> nodes) throws Exception {
-        TestingServer testingServer = new TestingServer(zkPort);
+        return createZkServerWithNodes(zkPort, null, nodes);
+    }
+
+    public static TestingServer createZkServerWithNodes(int zkPort, File tempDirectory, List<String[]> nodes) throws Exception {
+        TestingServer testingServer = new TestingServer(zkPort, tempDirectory);
 
         CuratorFramework client = CuratorFrameworkFactory.newClient(testingServer.getConnectString(),
-                new ExponentialBackoffRetry(1000, Integer.MAX_VALUE, 2 * 60 * 1000));
+                new RetryUntilElapsed(1000 * 3, 1000));
         client.start();
 
-        for (String[] n : nodes) {
+        if(null != nodes) for (String[] n : nodes) {
             assertEquals(2, n.length);
 
             if (null != n[1]) {
